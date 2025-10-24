@@ -1,35 +1,97 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete
+from sqlalchemy.orm import selectinload
+from typing import List, Optional
 from app.models.models import Item
 from app.schemas.schemas import ItemCreate, ItemUpdate
-from typing import List
 
-def get_items(db: Session, skip: int = 0, limit: int = 100) -> List[Item]:
-    return db.query(Item).offset(skip).limit(limit).all()
+class ItemCRUD:
+    async def get_item(self, db: AsyncSession, item_id: int) -> Optional[Item]:
+        """Obtiene un item por ID (solo activos)"""
+        result = await db.execute(
+            select(Item).filter(Item.id == item_id, Item.is_deleted == False)
+        )
+        return result.scalar_one_or_none()
 
-def get_item(db: Session, item_id: int) -> Item:
-    return db.query(Item).filter(Item.id == item_id).first()
+    async def get_items(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Item]:
+        """Obtiene lista de items activos"""
+        result = await db.execute(
+            select(Item)
+            .filter(Item.is_deleted == False)
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
 
-def create_user_item(db: Session, item: ItemCreate, owner_id: int) -> Item:
-    db_item = Item(**item.model_dump(), owner_id=owner_id)
-    db.add(db_item)
-    db.commit()
-    db.refresh(db_item)
-    return db_item
+    async def get_items_by_owner(self, db: AsyncSession, owner_id: int, skip: int = 0, limit: int = 100) -> List[Item]:
+        """Obtiene items de un propietario específico (solo activos)"""
+        result = await db.execute(
+            select(Item)
+            .filter(Item.owner_id == owner_id, Item.is_deleted == False)
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
 
-def update_item(db: Session, item_id: int, item_update: ItemUpdate) -> Item:
-    db_item = db.query(Item).filter(Item.id == item_id).first()
-    if db_item:
+    async def create_item(self, db: AsyncSession, item: ItemCreate, owner_id: int) -> Item:
+        """Crea un nuevo item"""
+        db_item = Item(
+            title=item.title,
+            description=item.description,
+            price=item.price,
+            owner_id=owner_id
+        )
+        db.add(db_item)
+        await db.commit()
+        await db.refresh(db_item)
+        return db_item
+
+    async def update_item(self, db: AsyncSession, item_id: int, item_update: ItemUpdate) -> Optional[Item]:
+        """Actualiza un item"""
+        db_item = await self.get_item(db, item_id)
+        if not db_item:
+            return None
+        
         update_data = item_update.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_item, field, value)
-        db.commit()
-        db.refresh(db_item)
-    return db_item
+        
+        await db.commit()
+        await db.refresh(db_item)
+        return db_item
 
-def delete_item(db: Session, item_id: int) -> bool:
-    db_item = db.query(Item).filter(Item.id == item_id).first()
-    if db_item:
-        db.delete(db_item)
-        db.commit()
+    async def soft_delete_item(self, db: AsyncSession, item_id: int) -> bool:
+        """Elimina un item (soft delete)"""
+        db_item = await self.get_item(db, item_id)
+        if not db_item:
+            return False
+        
+        db_item.soft_delete()
+        await db.commit()
         return True
-    return False
+
+    async def restore_item(self, db: AsyncSession, item_id: int) -> bool:
+        """Restaura un item eliminado"""
+        result = await db.execute(
+            select(Item).filter(Item.id == item_id, Item.is_deleted == True)
+        )
+        db_item = result.scalar_one_or_none()
+        if not db_item:
+            return False
+        
+        db_item.restore()
+        await db.commit()
+        return True
+
+    async def get_deleted_items(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Item]:
+        """Obtiene items eliminados (soft delete)"""
+        result = await db.execute(
+            select(Item)
+            .filter(Item.is_deleted == True)
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+# Instancia global del CRUD
+item_crud = ItemCRUD()

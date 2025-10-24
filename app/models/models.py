@@ -26,6 +26,7 @@ class User(Base, SoftDeleteMixin):
     # Relaciones uno a muchos
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")
+    items = relationship("Item", back_populates="owner", cascade="all, delete-orphan")
 
 class Post(Base, SoftDeleteMixin):
     __tablename__ = "posts"
@@ -61,3 +62,15 @@ class Tag(Base, SoftDeleteMixin):
     
     # Relación muchos a muchos
     posts = relationship("Post", secondary=post_tags, back_populates="tags")
+
+class Item(Base, SoftDeleteMixin):
+    __tablename__ = "items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True, nullable=False)
+    description = Column(Text)
+    price = Column(Float, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Relación muchos a uno
+    owner = relationship("User", back_populates="items")
