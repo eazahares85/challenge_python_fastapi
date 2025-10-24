@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import authenticate_user, create_access_token
-from app.schemas.schemas import Token
+from app.schemas.schemas import Token, UserCreate
 from app.crud.crud_user import user_crud
 
 router = APIRouter()
@@ -31,22 +31,19 @@ async def login_for_access_token(
 
 @router.post("/register", response_model=dict)
 async def register_user(
-    username: str,
-    email: str,
-    password: str,
-    name: str = None,
+    user_data: UserCreate,
     db: AsyncSession = Depends(get_db)
 ):
     """Endpoint para registrar un nuevo usuario"""
     # Verificar si el usuario ya existe
-    existing_user = await user_crud.get_user_by_username(db, username)
+    existing_user = await user_crud.get_user_by_username(db, user_data.username)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
     
-    existing_email = await user_crud.get_user_by_email(db, email)
+    existing_email = await user_crud.get_user_by_email(db, user_data.email)
     if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,13 +51,5 @@ async def register_user(
         )
     
     # Crear nuevo usuario
-    from app.schemas.schemas import UserCreate
-    user_data = UserCreate(
-        username=username,
-        email=email,
-        password=password,
-        name=name
-    )
-    
     user = await user_crud.create_user(db, user_data)
     return {"message": "User created successfully", "user_id": user.id}
